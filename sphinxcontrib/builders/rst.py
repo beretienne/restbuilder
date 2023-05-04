@@ -14,6 +14,7 @@ from __future__ import (print_function, unicode_literals, absolute_import)
 import codecs
 from os import path
 
+from urllib.parse import quote
 from docutils.io import StringOutput
 
 from sphinx.builders import Builder
@@ -42,7 +43,7 @@ class RstBuilder(Builder):
 
         # Function to convert the docname to a relative URI.
         def link_transform(docname):
-            return docname + self.link_suffix
+            return quote(docname) + self.link_suffix
 
         if self.config.rst_file_transform is not None:
             self.file_transform = self.config.rst_file_transform

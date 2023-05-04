@@ -1,0 +1,8 @@
+eclipse.preferences.version=1
+encoding//sphinxcontrib/__init__.py=utf-8
+encoding//sphinxcontrib/builders/__init__.py=utf-8
+encoding//sphinxcontrib/builders/rst.py=utf-8
+encoding//sphinxcontrib/restbuilder.py=utf-8
+encoding//sphinxcontrib/writers/__init__.py=utf-8
+encoding//sphinxcontrib/writers/rst.py=utf-8
+encoding/setup.py=utf-8

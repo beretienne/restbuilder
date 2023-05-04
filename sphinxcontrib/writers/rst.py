@@ -156,11 +156,13 @@ class RstTranslator(nodes.NodeVisitor):
     depart_sidebar = depart_topic
 
     def visit_rubric(self, node):
-        self.new_state(0)
-        self.add_text('-[ ')
+        pass
+#        self.new_state(self.indent)
+#        self.add_text('-[ ')
     def depart_rubric(self, node):
-        self.add_text(' ]-')
-        self.end_state()
+        pass
+#        self.end_state()
+#        self.add_text(' ]-')
 
     def visit_compound(self, node):
         # self.log_unknown("compount", node)
@@ -474,13 +476,18 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_image(self, node):
         self.new_state(0)
         if 'uri' in node:
-            self.add_text(_('.. image:: %s') % escape_uri(node['uri']))
+            self.add_text(_('.. image:: /%s') % escape_uri(node['uri']))
         elif 'target' in node.attributes:
-            self.add_text(_('.. image: %s') % node['target'])
+            self.add_text(_('.. image: /%s') % node['target'])
         elif 'alt' in node.attributes:
             self.add_text(_('[image: %s]') % node['alt'])
         else:
             self.add_text(_('[image]'))
+        indent = self.indent * ' '
+        if 'align' in node.attributes:
+            self.add_text(_(self.nl + indent + ((':align: %s') % node['align'])))
+        if 'width' in node.attributes:
+            self.add_text(_(self.nl + indent + ((':width: %s') % node['width'])))
         self.end_state(wrap=False)
         raise nodes.SkipNode
 
@@ -683,6 +690,14 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_compact_paragraph(self, node):
         self.depart_paragraph(node)
 
+    def visit_container(self, node):
+        self.new_state(0)
+        if ('design_component' in node.attributes):
+            self.add_text('.. ' + node.get('design_component') + ' ::')
+        
+    def depart_container(self, node):
+        self.end_state()
+        
     def visit_paragraph(self, node):
         if not isinstance(node.parent, nodes.Admonition) or \
                isinstance(node.parent, addnodes.seealso):
@@ -850,12 +865,22 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_raw(self, node):
-        if 'text' in node.get('format', '').split():
-            self.body.append(node.astext())
+        if 'text' or 'latex' in node.get('format', '').split():
+            self.visit_inline(node)
+            self.add_text(node.astext())
         raise nodes.SkipNode
 
     def visit_docinfo(self, node):
         raise nodes.SkipNode
+
+    def visit_fontawesome(self, node):
+        if node.hasattr('classes') and node.hasattr('icon'):
+            self.add_text(':' + node.get('classes')[0] + ':`' + node.get('icon') + '`')
+#        self.new_state()
+
+    def depart_fontawesome(self, node):
+#        self.end_state()
+        pass
 
     def unknown_visit(self, node):
         self.log_unknown(node.__class__.__name__, node)
