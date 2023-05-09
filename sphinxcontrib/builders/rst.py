@@ -27,15 +27,15 @@ class RstBuilder(Builder):
     format = 'rst'
     file_suffix = '.rst'
     link_suffix = None  # defaults to file_suffix
-
+    
     def init(self):
         """Load necessary templates and perform initialization."""
         if self.config.rst_file_suffix is not None:
             self.file_suffix = self.config.rst_file_suffix
         if self.config.rst_link_suffix is not None:
             self.link_suffix = self.config.rst_link_suffix
-        elif self.link_suffix is None:
-            self.link_suffix = self.file_suffix
+        # elif self.link_suffix is None:
+            # self.link_suffix = self.file_suffix
 
         # Function to convert the docname to a reST file name.
         def file_transform(docname):
@@ -43,7 +43,10 @@ class RstBuilder(Builder):
 
         # Function to convert the docname to a relative URI.
         def link_transform(docname):
-            return quote(docname) + self.link_suffix
+            if self.link_suffix is not None:
+                return quote(docname) + self.link_suffix
+            else:
+                return docname
 
         if self.config.rst_file_transform is not None:
             self.file_transform = self.config.rst_file_transform
@@ -93,6 +96,8 @@ class RstBuilder(Builder):
         destination = StringOutput(encoding='utf-8')
         # print "write(%s,%s)" % (type(doctree), type(destination))
 
+        self.current_docname = docname
+        
         self.writer.write(doctree, destination)
         outfilename = path.join(self.outdir, self.file_transform(docname))
         # print "write(%s,%s) -> %s" % (type(doctree), type(destination), outfilename)

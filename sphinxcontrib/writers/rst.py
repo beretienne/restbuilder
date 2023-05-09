@@ -18,6 +18,8 @@ import sys
 import textwrap
 import logging
 
+import posixpath
+
 from docutils import nodes, writers
 from docutils.nodes import fully_normalize_name
 
@@ -157,12 +159,9 @@ class RstTranslator(nodes.NodeVisitor):
 
     def visit_rubric(self, node):
         pass
-#        self.new_state(self.indent)
-#        self.add_text('-[ ')
+
     def depart_rubric(self, node):
         pass
-#        self.end_state()
-#        self.add_text(' ]-')
 
     def visit_compound(self, node):
         # self.log_unknown("compount", node)
@@ -693,10 +692,16 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_container(self, node):
         self.new_state(0)
         if ('design_component' in node.attributes):
-            self.add_text('.. ' + node.get('design_component') + ' ::')
+            self.add_text('.. ' + node.get('design_component') + ' :: ')
+            if isinstance(node.children[0], nodes.rubric):
+                for child in node.children[0]:
+                    child.walkabout(self)
+            node.children.pop(0)
+            self.end_state(wrap=False)
+            self.new_state(self.indent)
         
     def depart_container(self, node):
-        self.end_state()
+        self.end_state(wrap=False)
         
     def visit_paragraph(self, node):
         if not isinstance(node.parent, nodes.Admonition) or \
@@ -737,7 +742,31 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_pending_xref(self, node):
         pass
 
+    def _refuri(self, node):
+        url = node.get('refuri')
+        if not node.get('internal'):
+            return url
+        this_doc = self.builder.current_docname
+        if url in (None, ''):  # Reference to this doc
+            url = self.builder.get_target_uri(this_doc)
+        else:  # URL is relative to the current docname.
+            this_dir = posixpath.dirname(this_doc)
+            if this_dir:
+                url = posixpath.normpath('{}/{}'.format(this_dir, url))
+        url = '/{}'.format(url)
+        if 'refid' in node:
+            url += '#' + node['refid']
+        return url
+
     def visit_reference(self, node):
+        url = self._refuri(node)
+        if url is None:
+            return
+        for child in node.children:
+            child.walkabout(self)
+        self.add_text(' <{}>`'.format(url))
+        raise nodes.SkipNode
+
         refname = node.get('name')
         refbody = node.astext()
         refuri = node.get('refuri')
@@ -842,7 +871,11 @@ class RstTranslator(nodes.NodeVisitor):
         pass
 
     def visit_inline(self, node):
-        pass
+        if (node.parent.tagname in ('reference,')):
+            if (node['classes']) and len(node['classes']) == 1:
+                self.add_text(':%s:`' % node['classes'][0])
+            else:
+                self.log_warning('visit_inline - classes problem in %s' % node)
     def depart_inline(self, node):
         pass
 
@@ -865,9 +898,15 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_raw(self, node):
-        if 'text' or 'latex' in node.get('format', '').split():
-            self.visit_inline(node)
+        self.new_state(0)
+        if 'text' in node.get('format', '').split():
             self.add_text(node.astext())
+        if 'latex' in node.get('format', '').split():
+            self.add_text('.. raw:: ' + "%s" % node['format'] + self.nl)
+            self.new_state(self.indent)
+            self.add_text(node.children[0])
+            self.end_state(wrap=False)
+        self.end_state()
         raise nodes.SkipNode
 
     def visit_docinfo(self, node):
@@ -876,12 +915,17 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_fontawesome(self, node):
         if node.hasattr('classes') and node.hasattr('icon'):
             self.add_text(':' + node.get('classes')[0] + ':`' + node.get('icon') + '`')
-#        self.new_state()
 
     def depart_fontawesome(self, node):
-#        self.end_state()
         pass
 
+    def visit_tabular_col_spec(self, node):
+        if (node['spec']):
+            self.add_text('.. tabularcolumns:: ' + "%s" % node['spec'])
+        
+    def depart__tabular_col_spec(self, node):
+        pass
+        
     def unknown_visit(self, node):
         self.log_unknown(node.__class__.__name__, node)
         
