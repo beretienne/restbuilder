@@ -751,7 +751,7 @@ class RstTranslator(nodes.NodeVisitor):
             url = self.builder.get_target_uri(this_doc)
         else:  # URL is relative to the current docname.
             this_dir = posixpath.dirname(this_doc)
-            if this_dir:
+            if this_dir is not None:
                 url = posixpath.normpath('{}/{}'.format(this_dir, url))
         url = '/{}'.format(url)
         if 'refid' in node:
@@ -759,37 +759,38 @@ class RstTranslator(nodes.NodeVisitor):
         return url
 
     def visit_reference(self, node):
-        url = self._refuri(node)
-        if url is None:
-            return
-        for child in node.children:
-            child.walkabout(self)
-        self.add_text(' <{}>`'.format(url))
-        raise nodes.SkipNode
-
-        refname = node.get('name')
-        refbody = node.astext()
-        refuri = node.get('refuri')
-        refid = node.get('refid')
-        if node.get('anonymous'):
-            underscore = '__'
+        if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'][0] in ('doc', )):
+            url = self._refuri(node)
+            if url is None:
+                return
+            for child in node.children:
+                child.walkabout(self)
+            self.add_text(' <{}>`'.format(url))
+            raise nodes.SkipNode
         else:
-            underscore = '_'
-        if not refname:
-            refname = refbody
-
-        if refid:
-            if refid == self.document.nameids.get(fully_normalize_name(refname)):
-                self.add_text('`%s`%s' % (refname, underscore))
+            refname = node.get('name')
+            refbody = node.astext()
+            refuri = node.get('refuri')
+            refid = node.get('refid')
+            if node.get('anonymous'):
+                underscore = '__'
             else:
-                self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
-            raise nodes.SkipNode
-        elif refuri:
-            if refuri == refname:
-                self.add_text(escape_uri(refuri))
-            else:
-                self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
-            raise nodes.SkipNode
+                underscore = '_'
+            if not refname:
+                refname = refbody
+    
+            if refid:
+                if refid == self.document.nameids.get(fully_normalize_name(refname)):
+                    self.add_text('`%s`%s' % (refname, underscore))
+                else:
+                    self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
+                raise nodes.SkipNode
+            elif refuri:
+                if refuri == refname:
+                    self.add_text(escape_uri(refuri))
+                else:
+                    self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
+                raise nodes.SkipNode
 
     def depart_reference(self, node):
         pass
