@@ -19,9 +19,10 @@ import textwrap
 import logging
 
 import posixpath
+import re
 
 from docutils import nodes, writers
-from docutils.nodes import fully_normalize_name
+from docutils.nodes import fully_normalize_name, Text
 
 from sphinx import addnodes
 from sphinx.locale import admonitionlabels, _
@@ -751,46 +752,52 @@ class RstTranslator(nodes.NodeVisitor):
             url = self.builder.get_target_uri(this_doc)
         else:  # URL is relative to the current docname.
             this_dir = posixpath.dirname(this_doc)
-            if this_dir is not None:
-                url = posixpath.normpath('{}/{}'.format(this_dir, url))
-        url = '/{}'.format(url)
+            if this_dir is not "":
+                sep = '/'
+                if (not this_dir.startswith(sep)):
+                    this_dir = sep + this_dir
+            url = posixpath.normpath('{}/{}'.format(this_dir, url))
+#        url = '{}'.format(url)
         if 'refid' in node:
             url += '#' + node['refid']
         return url
 
     def visit_reference(self, node):
-        if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'][0] in ('doc', )):
+        if 'refuri' in node:
             url = self._refuri(node)
             if url is None:
                 return
-            for child in node.children:
-                child.walkabout(self)
-            self.add_text(' <{}>`'.format(url))
-            raise nodes.SkipNode
+            if node.get('internal'):
+                if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'doc' in node.children[0]['classes']):
+                    for child in node.children:
+                        child.walkabout(self)
+                        self.add_text(' <{}>`'.format(url))
+                else:
+                    self.add_text(':doc:`{} <{}>`'.format(node['name'], url))
+                raise nodes.SkipNode
+        refname = node.get('name')
+        refbody = node.astext()
+        refuri = node.get('refuri')
+        refid = node.get('refid')
+        if node.get('anonymous'):
+            underscore = '__'
         else:
-            refname = node.get('name')
-            refbody = node.astext()
-            refuri = node.get('refuri')
-            refid = node.get('refid')
-            if node.get('anonymous'):
-                underscore = '__'
+            underscore = '_'
+        if not refname:
+            refname = refbody
+
+        if refid:
+            if refid == self.document.nameids.get(fully_normalize_name(refname)):
+                self.add_text('`%s`%s' % (refname, underscore))
             else:
-                underscore = '_'
-            if not refname:
-                refname = refbody
-    
-            if refid:
-                if refid == self.document.nameids.get(fully_normalize_name(refname)):
-                    self.add_text('`%s`%s' % (refname, underscore))
-                else:
-                    self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
-                raise nodes.SkipNode
-            elif refuri:
-                if refuri == refname:
-                    self.add_text(escape_uri(refuri))
-                else:
-                    self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
-                raise nodes.SkipNode
+                self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
+            raise nodes.SkipNode
+        elif refuri:
+            if refuri == refname:
+                self.add_text(escape_uri(refuri))
+            else:
+                self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
+            raise nodes.SkipNode
 
     def depart_reference(self, node):
         pass
@@ -873,7 +880,11 @@ class RstTranslator(nodes.NodeVisitor):
 
     def visit_inline(self, node):
         if (node.parent.tagname in ('reference,')):
-            if (node['classes']) and len(node['classes']) == 1:
+            if node['classes'] and 'doc' in node['classes']:    # Check if :doc: must be written
+                if (node.children[0]):                          # Check if link title
+                    text = node.astext()                        # Get the title
+                    node.clear()                                # Clear node body
+                    node.append(nodes.Text(re.sub(r'[\*]', '', text)))  # replace by a Text node with cleaned-up content
                 self.add_text(':%s:`' % node['classes'][0])
             else:
                 self.log_warning('visit_inline - classes problem in %s' % node)
