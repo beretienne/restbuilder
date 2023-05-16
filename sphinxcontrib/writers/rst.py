@@ -26,7 +26,7 @@ from docutils.nodes import fully_normalize_name, Text
 
 from sphinx import addnodes
 from sphinx.locale import admonitionlabels, _
-from sphinx.writers.text import MAXWIDTH, STDINDENT
+from sphinx.writers.text import Cell, Table, MAXWIDTH, STDINDENT
 
 
 def escape_uri(uri):
@@ -376,8 +376,10 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_colspec(self, node):
-        self.table[0].append(round(node['colwidth']))
+        self.table.colwidth.append(node["colwidth"])
         raise nodes.SkipNode
+        # self.table[0].append(round(node['colwidth']))
+        # raise nodes.SkipNode
 
     def visit_tgroup(self, node):
         # self.log_unknown("tgroup", node)
@@ -392,79 +394,95 @@ class RstTranslator(nodes.NodeVisitor):
         pass
 
     def visit_tbody(self, node):
-        self.table.append('sep')
+        self.table.set_separator()
     def depart_tbody(self, node):
         pass
 
     def visit_row(self, node):
-        self.table.append([])
+        if self.table.lines:
+            self.table.add_row()
+        # self.table.append([])
     def depart_row(self, node):
         pass
 
     def visit_entry(self, node):
-        if 'morerows' in node or 'morecols' in node:
-            self.log_warning('Column or row spanning cells are not implemented.')
+        self.entry = Cell(
+            rowspan=node.get("morerows", 0) + 1, colspan=node.get("morecols", 0) + 1
+        )
         self.new_state(0)
+        # if 'morerows' in node or 'morecols' in node:
+        #     self.log_warning('Column or row spanning cells are not implemented.')
+        # self.new_state(0)
     def depart_entry(self, node):
         text = self.nl.join(self.nl.join(x[1]) for x in self.states.pop())
         self.stateindent.pop()
-        self.table[-1].append(text)
+        self.entry.text = text
+        self.table.add_cell(self.entry)
+        self.entry = None
+        # text = self.nl.join(self.nl.join(x[1]) for x in self.states.pop())
+        # self.stateindent.pop()
+        # self.table[-1].append(text)
 
     def visit_table(self, node):
         if self.table:
             self.log_warning('Nested tables are not supported.')
         self.new_state(0)
-        self.table = [[]]
+        self.table = Table()
+
     def depart_table(self, node):
-        lines = self.table[1:]
-        fmted_rows = []
-        colwidths = self.table[0]
-        realwidths = colwidths[:]
-        separator = 0
-        # don't allow paragraphs in table cells for now
-        for line in lines:
-            if line == 'sep':
-                separator = len(fmted_rows)
-            else:
-                cells = []
-                for i, cell in enumerate(line):
-                    par = self.wrap(cell, width=colwidths[i])
-                    if par:
-                        maxwidth = max(list(map(len, par)))
-                    else:
-                        maxwidth = 0
-                    realwidths[i] = max(realwidths[i], maxwidth)
-                    cells.append(par)
-                fmted_rows.append(cells)
-
-        def writesep(char='-'):
-            out = ['+']
-            for width in realwidths:
-                out.append(char * (width+2))
-                out.append('+')
-            self.add_text(''.join(out) + self.nl)
-
-        def writerow(row):
-            lines = list(zip(*row))
-            for line in lines:
-                out = ['|']
-                for i, cell in enumerate(line):
-                    if cell:
-                        out.append(' ' + cell.ljust(realwidths[i]+1))
-                    else:
-                        out.append(' ' * (realwidths[i] + 2))
-                    out.append('|')
-                self.add_text(''.join(out) + self.nl)
-
-        for i, row in enumerate(fmted_rows):
-            if separator and i == separator:
-                writesep('=')
-            else:
-                writesep('-')
-            writerow(row)
-        writesep('-')
+        self.add_text(str(self.table))
         self.table = None
         self.end_state(wrap=False)
+        
+        # lines = self.table[1:]
+        # fmted_rows = []
+        # colwidths = self.table[0]
+        # realwidths = colwidths[:]
+        # separator = 0
+        # # don't allow paragraphs in table cells for now
+        # for line in lines:
+        #     if line == 'sep':
+        #         separator = len(fmted_rows)
+        #     else:
+        #         cells = []
+        #         for i, cell in enumerate(line):
+        #             par = self.wrap(cell, width=colwidths[i])
+        #             if par:
+        #                 maxwidth = max(list(map(len, par)))
+        #             else:
+        #                 maxwidth = 0
+        #             realwidths[i] = max(realwidths[i], maxwidth)
+        #             cells.append(par)
+        #         fmted_rows.append(cells)
+        #
+        # def writesep(char='-'):
+        #     out = ['+']
+        #     for width in realwidths:
+        #         out.append(char * (width+2))
+        #         out.append('+')
+        #     self.add_text(''.join(out) + self.nl)
+        #
+        # def writerow(row):
+        #     lines = list(zip(*row))
+        #     for line in lines:
+        #         out = ['|']
+        #         for i, cell in enumerate(line):
+        #             if cell:
+        #                 out.append(' ' + cell.ljust(realwidths[i]+1))
+        #             else:
+        #                 out.append(' ' * (realwidths[i] + 2))
+        #             out.append('|')
+        #         self.add_text(''.join(out) + self.nl)
+        #
+        # for i, row in enumerate(fmted_rows):
+        #     if separator and i == separator:
+        #         writesep('=')
+        #     else:
+        #         writesep('-')
+        #     writerow(row)
+        # writesep('-')
+        # self.table = None
+        # self.end_state(wrap=False)
 
     def visit_acks(self, node):
         self.new_state(0)
