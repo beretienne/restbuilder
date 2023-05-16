@@ -752,7 +752,7 @@ class RstTranslator(nodes.NodeVisitor):
             url = self.builder.get_target_uri(this_doc)
         else:  # URL is relative to the current docname.
             this_dir = posixpath.dirname(this_doc)
-            if this_dir is not "":
+            if this_dir != "":
                 sep = '/'
                 if (not this_dir.startswith(sep)):
                     this_dir = sep + this_dir
@@ -763,28 +763,28 @@ class RstTranslator(nodes.NodeVisitor):
         return url
 
     def visit_reference(self, node):
-        if 'refuri' in node:
+        refname = node.get('name')
+        refbody = node.astext()
+        refuri = node.get('refuri')
+        refid = node.get('refid')
+        if not refname:
+            refname = refbody
+        if refuri:
             url = self._refuri(node)
             if url is None:
-                return
+                self.log_warning("(%s) ref without explicit uri" % (node))
             if node.get('internal'):
                 if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'doc' in node.children[0]['classes']):
                     for child in node.children:
                         child.walkabout(self)
                         self.add_text(' <{}>`'.format(url))
                 else:
-                    self.add_text(':doc:`{} <{}>`'.format(node['name'], url))
+                    self.add_text(':doc:`{} <{}>`'.format(refname, url))
                 raise nodes.SkipNode
-        refname = node.get('name')
-        refbody = node.astext()
-        refuri = node.get('refuri')
-        refid = node.get('refid')
         if node.get('anonymous'):
             underscore = '__'
         else:
             underscore = '_'
-        if not refname:
-            refname = refbody
 
         if refid:
             if refid == self.document.nameids.get(fully_normalize_name(refname)):
@@ -803,8 +803,17 @@ class RstTranslator(nodes.NodeVisitor):
         pass
 
     def visit_download_reference(self, node):
-        self.log_unknown("download_reference", node)
-        pass
+        if 'refuri' in node and 'reftype' in node and node['reftype'] == 'download':
+            self.add_text(':download:`{}`'.format(node['refuri']))
+        elif 'filename' in node:
+            if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'download' in node.children[0]['classes']):
+                self.add_text(':download:`')
+                for child in node.children:
+                    child.walkabout(self)
+                    self.add_text(' <{}>`'.format(node['reftarget']))
+                raise nodes.SkipNode
+        else:
+            self.log_unknown("download_reference", node)
     def depart_download_reference(self, node):
         pass
 
@@ -836,9 +845,15 @@ class RstTranslator(nodes.NodeVisitor):
         self.add_text('*')
 
     def visit_literal(self, node):
-        self.add_text('``')
+        if (node.parent.tagname == 'download_reference'):
+            pass
+        else:
+            self.add_text('``')
     def depart_literal(self, node):
-        self.add_text('``')
+        if (node.parent.tagname == 'download_reference'):
+            pass
+        else:
+            self.add_text('``')
 
     def visit_subscript(self, node):
         self.add_text(':sub:`')
