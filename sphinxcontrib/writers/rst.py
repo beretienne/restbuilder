@@ -27,7 +27,7 @@ from docutils import nodes, writers
 from docutils.nodes import fully_normalize_name, Text
 
 from sphinx import addnodes
-from sphinx.locale import admonitionlabels, _
+from sphinx.locale import _, admonitionlabels
 from sphinx.writers.text import Cell, Table, MAXWIDTH, STDINDENT
 
 
@@ -113,8 +113,7 @@ class RstWriter(writers.Writer):
 class RstTranslator(nodes.NodeVisitor):
     sectionchars = '*=-~"+`'
 
-    admonitions = (
-        'warning',
+    _base_admonitions = (
         'attention',
         'caution',
         'danger',
@@ -123,6 +122,7 @@ class RstTranslator(nodes.NodeVisitor):
         'important',
         'note',
         'tip',
+        'warning',
         )
 
     def __init__(self, document, builder):
@@ -443,6 +443,9 @@ class RstTranslator(nodes.NodeVisitor):
 
     def visit_tabular_col_spec(self, node):
         raise nodes.SkipNode
+    
+    def depart_tabular_col_spec(self, node):
+        pass
 
     def visit_colspec(self, node):
         self.table.colwidth.append(node["colwidth"])
@@ -626,37 +629,51 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_hlistcol(self, node):
         pass
 
-    # def visit_admonition(self, node):
-    #     self.new_state(0)
-    # def depart_admonition(self, node):
-    #     self.end_state()
-
     def _visit_admonition(self, node):
-        if node.tagname == 'admonition' and node['classes'][0] in self.admonitions:
-            self.add_text('.. ' + node['classes'][0] + ':: ')
+        self.new_state(0)
+        if (node.tagname in self._base_admonitions):
+            self.add_text('.. ' + node.tagname + ':: ')
+        elif (node.tagname == 'admonition'):
+            if node['classes'][0] in self._base_admonitions:
+                self.add_text('.. ' + node['classes'][0] + ':: ')
+            elif 'admonition' in node['classes'][0]:
+                self.add_text('.. ' + 'admonition' + ':: ')
+            else:
+                self.log_warning("(%s) malformed admonition" % (node))
         else:
-            self.add_text('.. ' + node.tagname + ' :: ')
+            self.log_warning("(%s) malformed admonition" % (node))
         if isinstance(node.children[0], nodes.title):
             for child in node.children[0]:
                 child.walkabout(self)
-        node.children.pop(0)
-        # self.end_state(wrap=False)
+                node.children.pop(0)
+        self.end_state(wrap=False)
         self.new_state(self.indent)
-    # def _make_depart_admonition(name):
-    def depart_admonition(self, node):
-        self.end_state()
-        # return depart_admonition
+        
+    def _depart_admonition():
+        def depart_admonition(self, node):
+            self.end_state()
+        return depart_admonition
 
     visit_admonition = _visit_admonition
+    depart_admonition = _depart_admonition()
     visit_attention = _visit_admonition
+    depart_attention = _depart_admonition()
     visit_caution = _visit_admonition
+    depart_caution = _depart_admonition()
     visit_danger = _visit_admonition
+    depart_danger = _depart_admonition()
     visit_error = _visit_admonition
+    depart_error = _depart_admonition()
     visit_hint = _visit_admonition
+    depart_hint = _depart_admonition()
     visit_important = _visit_admonition
+    depart_important = _depart_admonition()
     visit_note = _visit_admonition
+    depart_note = _depart_admonition()
     visit_tip = _visit_admonition
+    depart_tip = _depart_admonition()
     visit_warning = _visit_admonition
+    depart_warning = _depart_admonition()
 
     def visit_versionmodified(self, node):
         self.new_state(0)
@@ -976,7 +993,15 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_tabular_col_spec(self, node):
         if (node['spec']):
             self.add_text('.. tabularcolumns:: ' + "%s" % node['spec'])
-        
+
+    def visit_ifconfig(self, node):
+        self.new_state(0)
+        self.add_text('.. ' + 'ifconfig' + ':: ' + node['expr'])
+        self.end_state(wrap=False)
+        self.new_state(self.indent)
+    def depart_ifconfig(self, node):
+        self.end_state()
+
     def depart__tabular_col_spec(self, node):
         pass
         
