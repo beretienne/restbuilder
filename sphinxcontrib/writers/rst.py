@@ -18,16 +18,18 @@ import sys
 import textwrap
 import logging
 
+# Added
 import posixpath
 import re
 from itertools import chain
 from docutils.utils import column_width
+from ..restbuilder import include
 
 from docutils import nodes, writers
 from docutils.nodes import fully_normalize_name, Text
 
 from sphinx import addnodes
-from sphinx.locale import _, admonitionlabels
+from sphinx.locale import _
 from sphinx.writers.text import Cell, Table, MAXWIDTH, STDINDENT
 
 
@@ -993,6 +995,8 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_tabular_col_spec(self, node):
         if (node['spec']):
             self.add_text('.. tabularcolumns:: ' + "%s" % node['spec'])
+    def depart_tabular_col_spec(self, node):
+        pass
 
     def visit_ifconfig(self, node):
         self.new_state(0)
@@ -1002,9 +1006,16 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_ifconfig(self, node):
         self.end_state()
 
-    def depart__tabular_col_spec(self, node):
+    def visit_include(self, node):
+        self.new_state(0)
+        if 'text' in node.get('format', '').split():
+            self.add_text(node.astext())
+        self.end_state(wrap=False)
+        raise nodes.SkipNode
+
+    def depart_include(self, node):
         pass
-        
+
     def unknown_visit(self, node):
         self.log_unknown(node.__class__.__name__, node)
         
