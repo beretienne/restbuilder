@@ -803,7 +803,6 @@ class RstTranslator(nodes.NodeVisitor):
                 if (not this_dir.startswith(sep)):
                     this_dir = sep + this_dir
             url = posixpath.normpath('{}/{}'.format(this_dir, url))
-#        url = '{}'.format(url)
         if 'refid' in node:
             url += '#' + node['refid']
         return url
