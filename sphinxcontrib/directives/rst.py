@@ -17,3 +17,10 @@ class Include(Include):
         else:
             return super().run()
 
+def set_ifconfig_nodes_status(app):
+    if (app.builder.name == 'rst'):
+        # 'process_ifconfig_nodes' listener only removed for 'rst' builder
+        for listeners in app.events.listeners.values():
+            for listener in listeners[:]:
+                if (listener.handler.__name__ == 'process_ifconfig_nodes'):
+                    listeners.remove(listener)

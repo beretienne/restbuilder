@@ -28,7 +28,7 @@ def setup(app):
     # even if Sphinx is not yet installed.
     from sphinx.writers.text import STDINDENT
     from sphinx.util import docutils
-    from .directives.rst import Include
+    from .directives.rst import Include, set_ifconfig_nodes_status
     from .builders.rst import RstBuilder  # loads RstWriter as well.
 
     app.require_sphinx('1.4')
@@ -44,10 +44,7 @@ def setup(app):
     app.add_config_value('rst_indent', STDINDENT, False)
     app.add_directive('include', Include, override=True)
     app.add_node(include)
-    for listeners in app.events.listeners.values():
-        for listener in listeners[:]:
-            if (listener.handler.__name__ == 'process_ifconfig_nodes'):
-                listeners.remove(listener)
+    app.connect('builder-inited', set_ifconfig_nodes_status)
 
     return {
         'version': __version__,
