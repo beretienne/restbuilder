@@ -26,7 +26,7 @@ from docutils.utils import column_width
 from ..restbuilder import include
 
 from docutils import nodes, writers
-from docutils.nodes import fully_normalize_name, Text
+from docutils.nodes import fully_normalize_name, whitespace_normalize_name, Text
 
 from sphinx import addnodes
 from sphinx.locale import _
@@ -814,35 +814,52 @@ class RstTranslator(nodes.NodeVisitor):
         refid = node.get('refid')
         if not refname:
             refname = refbody
-        if refuri:
-            url = self._refuri(node)
-            if url is None:
-                self.log_warning("(%s) ref without explicit uri" % (node))
-            if node.get('internal'):
+        if node.get('internal'):
+            if 'refuri' in node: # internal
                 if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'doc' in node.children[0]['classes']):
                     for child in node.children:
                         child.walkabout(self)
-                        self.add_text(' <{}>`'.format(url))
+                        self.add_text(' <{}>`'.format(refuri))
+                elif (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'std-ref' in node.children[0]['classes']):
+                    path, target = refuri.split('#')
+                    if target:
+                        target = ' '.join(target.split('-'))
+                    self.add_text(':ref:`{}:{}`'.format(path, target))
                 else:
-                    self.add_text(':doc:`{} <{}>`'.format(refname, url))
-                raise nodes.SkipNode
-        if node.get('anonymous'):
-            underscore = '__'
+                    # self.log_warning("(%s) ref issue" % (node))
+                    self.add_text(':doc:`{} <{}>`'.format(refname, refuri))
+            else:
+                assert 'refid' in node, \
+                   'References must have "refuri" or "refid" attribute.'
+                self.add_text(':ref:`{}`'.format(refid))
+            raise nodes.SkipNode
         else:
-            underscore = '_'
+            return refuri
+        
+        
+        
+        # if refuri:
 
-        if refid:
-            if refid == self.document.nameids.get(fully_normalize_name(refname)):
-                self.add_text('`%s`%s' % (refname, underscore))
-            else:
-                self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
-            raise nodes.SkipNode
-        elif refuri:
-            if refuri == refname:
-                self.add_text(escape_uri(refuri))
-            else:
-                self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
-            raise nodes.SkipNode
+            # if url is None:
+            #     self.log_warning("(%s) ref without explicit uri" % (node))
+     
+        # if node.get('anonymous'):
+        #     underscore = '__'
+        # else:
+        #     underscore = '_'
+
+        # if refid:
+        #     if refid == self.document.nameids.get(fully_normalize_name(refname)):
+        #         self.add_text('`%s`%s' % (refname, underscore))
+        #     else:
+        #         self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
+        #     raise nodes.SkipNode
+        # elif refuri:
+        #     if refuri == refname:
+        #         self.add_text(escape_uri(refuri))
+        #     else:
+        #         self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
+        #     raise nodes.SkipNode
 
     def depart_reference(self, node):
         pass
