@@ -8,7 +8,7 @@ class Include(Include):
         if (self.env.app.builder.name == 'rst'):
             current_line = self.lineno - self.state_machine.input_offset - 1
             if ('rst_prolog' in self.state_machine.input_lines.items[current_line][0]):
-                return []       # Skip includes from rst_prolog
+                return super().run()       # Skip includes from rst_prolog
             attributes = {'format': 'text'}
             node = include('', self.block_text, classes=self.options.get('class', []), **attributes)
             (node.source,
