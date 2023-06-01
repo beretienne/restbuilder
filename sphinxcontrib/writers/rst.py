@@ -789,24 +789,6 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_pending_xref(self, node):
         pass
 
-    def _refuri(self, node):
-        url = node.get('refuri')
-        if not node.get('internal'):
-            return url
-        this_doc = self.builder.current_docname
-        if url in (None, ''):  # Reference to this doc
-            url = self.builder.get_target_uri(this_doc)
-        else:  # URL is relative to the current docname.
-            this_dir = posixpath.dirname(this_doc)
-            if this_dir != "":
-                sep = '/'
-                if (not this_dir.startswith(sep)):
-                    this_dir = sep + this_dir
-            url = posixpath.normpath('{}/{}'.format(this_dir, url))
-        if 'refid' in node:
-            url += '#' + node['refid']
-        return url
-
     def visit_reference(self, node):
         refname = node.get('name')
         refbody = node.astext()
@@ -819,15 +801,16 @@ class RstTranslator(nodes.NodeVisitor):
                 if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'doc' in node.children[0]['classes']):
                     for child in node.children:
                         child.walkabout(self)
-                        self.add_text(' <{}>`'.format(refuri))
+                        self.add_text(' </{}>`'.format(refuri))
                 elif (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'std-ref' in node.children[0]['classes']):
-                    path, target = refuri.split('#')
-                    if target:
-                        target = ' '.join(target.split('-'))
-                    self.add_text(':ref:`{}:{}`'.format(path, target))
+                    path = refuri.split('#')[0] # take only path
+                    self.add_text(':ref:`{}:{}`'.format(path, refname))
                 else:
-                    # self.log_warning("(%s) ref issue" % (node))
-                    self.add_text(':doc:`{} <{}>`'.format(refname, refuri))
+                    refuri_split = refuri.split('#')
+                    if len(refuri_split) == 1:
+                         self.add_text(':doc:`{} </{}>`'.format(refname, refuri))
+                    else:
+                        self.add_text(':ref:`{}:{}`'.format(refuri_split[0], refname))
             else:
                 assert 'refid' in node, \
                    'References must have "refuri" or "refid" attribute.'
@@ -835,31 +818,6 @@ class RstTranslator(nodes.NodeVisitor):
             raise nodes.SkipNode
         else:
             return refuri
-        
-        
-        
-        # if refuri:
-
-            # if url is None:
-            #     self.log_warning("(%s) ref without explicit uri" % (node))
-     
-        # if node.get('anonymous'):
-        #     underscore = '__'
-        # else:
-        #     underscore = '_'
-
-        # if refid:
-        #     if refid == self.document.nameids.get(fully_normalize_name(refname)):
-        #         self.add_text('`%s`%s' % (refname, underscore))
-        #     else:
-        #         self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
-        #     raise nodes.SkipNode
-        # elif refuri:
-        #     if refuri == refname:
-        #         self.add_text(escape_uri(refuri))
-        #     else:
-        #         self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
-        #     raise nodes.SkipNode
 
     def depart_reference(self, node):
         pass

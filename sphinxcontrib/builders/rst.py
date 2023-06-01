@@ -87,6 +87,10 @@ class RstBuilder(Builder):
     def get_target_uri(self, docname, typ=None):
         return self.link_transform(docname)
 
+    def get_relative_uri(self, from_ , to , typ = None):
+        # ignore source path, so all refuri will be from confdir
+        return self.get_target_uri(to, typ)
+
     def prepare_writing(self, docnames):
         self.writer = RstWriter(self)
 
@@ -96,7 +100,7 @@ class RstBuilder(Builder):
         destination = StringOutput(encoding='utf-8')
         # print "write(%s,%s)" % (type(doctree), type(destination))
 
-        self.current_docname = docname
+        # self.current_docname = docname
         
         self.writer.write(doctree, destination)
         outfilename = path.join(self.outdir, self.file_transform(docname))
