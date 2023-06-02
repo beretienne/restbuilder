@@ -739,7 +739,7 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_container(self, node):
         self.new_state(0)
         if ('design_component' in node.attributes):
-            self.add_text('.. ' + node.get('design_component') + ' :: ')
+            self.add_text('.. ' + node.get('design_component') + ':: ')
             if isinstance(node.children[0], nodes.rubric):
                 for child in node.children[0]:
                     child.walkabout(self)
@@ -782,6 +782,11 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_substitution_definition(self, node):
+        # try:
+        #     next(node.findall(nodes.section, descend = False, ascend = True))
+        # except StopIteration:
+        #     self.add_text('|{}|'.format(node.get('names')[0]))
+        #     return
         raise nodes.SkipNode
 
     def visit_pending_xref(self, node):
@@ -817,6 +822,8 @@ class RstTranslator(nodes.NodeVisitor):
                 self.add_text(':ref:`{}`'.format(refid))
             raise nodes.SkipNode
         else:
+            if refuri .startswith('mailto:'):
+                return refbody
             return refuri
 
     def depart_reference(self, node):
@@ -895,6 +902,12 @@ class RstTranslator(nodes.NodeVisitor):
         self.add_text('[%s]' % node.astext())
         raise nodes.SkipNode
 
+    def visit_math(self, node):
+        self.add_text(":math:`")
+        
+    def depart_math(self, node):
+        self.add_text("`")
+        
     def visit_math_block(self, node):
         self.add_text(".. math::")
         self.new_state(self.indent)
