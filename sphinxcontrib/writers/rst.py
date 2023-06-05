@@ -26,7 +26,7 @@ from docutils.utils import column_width
 from ..restbuilder import include
 
 from docutils import nodes, writers
-from docutils.nodes import fully_normalize_name, whitespace_normalize_name, Text
+from docutils.nodes import Text
 
 from sphinx import addnodes
 from sphinx.locale import _
