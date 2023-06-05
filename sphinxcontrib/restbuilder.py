@@ -16,10 +16,19 @@ from __future__ import (print_function, unicode_literals, absolute_import)
 __version__ = '0.3.0'
 __author__ = 'Freek Dijkstra <freek@macfreek.nl> and contributors'
 
+import docutils
+from docutils import nodes
+from docutils.nodes import Special, FixedTextElement
+
+class include(nodes.Special, nodes.FixedTextElement):
+    """Node for coding include directives"""
+
 def setup(app):
     # imports defined inside setup function, so that the __version__ can be loaded,
     # even if Sphinx is not yet installed.
     from sphinx.writers.text import STDINDENT
+    from sphinx.util import docutils
+    from .directives.rst import Include, set_ifconfig_nodes_status
     from .builders.rst import RstBuilder  # loads RstWriter as well.
 
     app.require_sphinx('1.4')
@@ -33,6 +42,9 @@ def setup(app):
     app.add_config_value('rst_link_transform', None, False)
     """Function to translate a docname to a (partial) URI. By default, returns docname + rst_link_suffix."""
     app.add_config_value('rst_indent', STDINDENT, False)
+    app.add_directive('include', Include, override=True)
+    app.add_node(include)
+    app.connect('builder-inited', set_ifconfig_nodes_status)
 
     return {
         'version': __version__,

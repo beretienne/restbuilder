@@ -18,18 +18,81 @@ import sys
 import textwrap
 import logging
 
+# Added
+import posixpath
+import re
+from itertools import chain
+from docutils.utils import column_width
+from ..restbuilder import include
+
 from docutils import nodes, writers
-from docutils.nodes import fully_normalize_name
+from docutils.nodes import Text
 
 from sphinx import addnodes
-from sphinx.locale import admonitionlabels, _
-from sphinx.writers.text import MAXWIDTH, STDINDENT
+from sphinx.locale import _
+from sphinx.writers.text import Cell, Table, MAXWIDTH, STDINDENT
 
 
 def escape_uri(uri):
     if uri.endswith('_'):
         uri = uri[:-1] + '\\_'
     return uri
+
+class _Table(Table):
+
+    def __str__(self):
+        out = []
+        self.rewrap()
+
+        def writesep(char="-", lineno=None):
+            """Called on the line *before* lineno.
+            Called with no *lineno* for the last sep.
+            """
+            out: List[str] = []
+            for colno, width in enumerate(self.measured_widths):
+                if (
+                    lineno is not None and
+                    lineno > 0 and
+                    self[lineno, colno] is self[lineno - 1, colno]
+                ):
+                    out.append(" " * (width + 2))
+                else:
+                    out.append(char * (width + 2))
+            head = "+" if out[0][0] == "-" or "=" else "|"
+            tail = "+" if out[-1][0] == "-" or out[0][0] == "=" else "|"
+            glue = [
+                "+" if left[0] == "-" or left[0] == "=" or right[0] == "-" or right[0] == "=" else "|"
+                for left, right in zip(out, out[1:])
+            ]
+            glue.append(tail)
+            return head + "".join(chain.from_iterable(zip(out, glue)))
+
+        for lineno, line in enumerate(self.lines):
+            if self.separator and lineno == self.separator:
+                out.append(writesep("=", lineno))
+            else:
+                out.append(writesep("-", lineno))
+            for physical_line in range(self.physical_lines_for_line(line)):
+                linestr = ["|"]
+                for colno, cell in enumerate(line):
+                    if cell.col != colno:
+                        continue
+                    if lineno != cell.row:
+                        physical_text = ""
+                    elif physical_line >= len(cell.wrapped):
+                        physical_text = ""
+                    else:
+                        physical_text = cell.wrapped[physical_line]
+                    adjust_len = len(physical_text) - column_width(physical_text)
+                    linestr.append(
+                        " " +
+                        physical_text.ljust(
+                            self.cell_width(cell, self.measured_widths) + 1 + adjust_len
+                        ) + "|"
+                    )
+                out.append("".join(linestr))
+        out.append(writesep("-"))
+        return "\n".join(out)
 
 
 class RstWriter(writers.Writer):
@@ -51,6 +114,18 @@ class RstWriter(writers.Writer):
 
 class RstTranslator(nodes.NodeVisitor):
     sectionchars = '*=-~"+`'
+
+    _base_admonitions = (
+        'attention',
+        'caution',
+        'danger',
+        'error',
+        'hint',
+        'important',
+        'note',
+        'tip',
+        'warning',
+        )
 
     def __init__(self, document, builder):
         nodes.NodeVisitor.__init__(self, document)
@@ -156,11 +231,10 @@ class RstTranslator(nodes.NodeVisitor):
     depart_sidebar = depart_topic
 
     def visit_rubric(self, node):
-        self.new_state(0)
-        self.add_text('-[ ')
+        pass
+
     def depart_rubric(self, node):
-        self.add_text(' ]-')
-        self.end_state()
+        pass
 
     def visit_compound(self, node):
         # self.log_unknown("compount", node)
@@ -175,9 +249,8 @@ class RstTranslator(nodes.NodeVisitor):
         pass
 
     def visit_title(self, node):
-        if isinstance(node.parent, nodes.Admonition):
-            self.add_text(node.astext()+': ')
-            raise nodes.SkipNode
+        # if isinstance(node.parent, nodes.Admonition):
+        #     raise nodes.SkipNode
         self.new_state(0)
     def depart_title(self, node):
         if isinstance(node.parent, nodes.section):
@@ -372,95 +445,55 @@ class RstTranslator(nodes.NodeVisitor):
 
     def visit_tabular_col_spec(self, node):
         raise nodes.SkipNode
+    
+    def depart_tabular_col_spec(self, node):
+        pass
 
     def visit_colspec(self, node):
-        self.table[0].append(round(node['colwidth']))
+        self.table.colwidth.append(node["colwidth"])
         raise nodes.SkipNode
 
     def visit_tgroup(self, node):
-        # self.log_unknown("tgroup", node)
         pass
     def depart_tgroup(self, node):
         pass
 
     def visit_thead(self, node):
-        # self.log_unknown("thead", node)
         pass
     def depart_thead(self, node):
         pass
 
     def visit_tbody(self, node):
-        self.table.append('sep')
+        self.table.set_separator()
     def depart_tbody(self, node):
         pass
 
     def visit_row(self, node):
-        self.table.append([])
+        if self.table.lines:
+            self.table.add_row()
     def depart_row(self, node):
         pass
 
     def visit_entry(self, node):
-        if 'morerows' in node or 'morecols' in node:
-            self.log_warning('Column or row spanning cells are not implemented.')
+        self.entry = Cell(
+            rowspan=node.get("morerows", 0) + 1, colspan=node.get("morecols", 0) + 1
+        )
         self.new_state(0)
     def depart_entry(self, node):
         text = self.nl.join(self.nl.join(x[1]) for x in self.states.pop())
         self.stateindent.pop()
-        self.table[-1].append(text)
+        self.entry.text = text
+        self.table.add_cell(self.entry)
+        self.entry = None
 
     def visit_table(self, node):
         if self.table:
             self.log_warning('Nested tables are not supported.')
         self.new_state(0)
-        self.table = [[]]
+        self.table = _Table()
+
     def depart_table(self, node):
-        lines = self.table[1:]
-        fmted_rows = []
-        colwidths = self.table[0]
-        realwidths = colwidths[:]
-        separator = 0
-        # don't allow paragraphs in table cells for now
-        for line in lines:
-            if line == 'sep':
-                separator = len(fmted_rows)
-            else:
-                cells = []
-                for i, cell in enumerate(line):
-                    par = self.wrap(cell, width=colwidths[i])
-                    if par:
-                        maxwidth = max(list(map(len, par)))
-                    else:
-                        maxwidth = 0
-                    realwidths[i] = max(realwidths[i], maxwidth)
-                    cells.append(par)
-                fmted_rows.append(cells)
-
-        def writesep(char='-'):
-            out = ['+']
-            for width in realwidths:
-                out.append(char * (width+2))
-                out.append('+')
-            self.add_text(''.join(out) + self.nl)
-
-        def writerow(row):
-            lines = list(zip(*row))
-            for line in lines:
-                out = ['|']
-                for i, cell in enumerate(line):
-                    if cell:
-                        out.append(' ' + cell.ljust(realwidths[i]+1))
-                    else:
-                        out.append(' ' * (realwidths[i] + 2))
-                    out.append('|')
-                self.add_text(''.join(out) + self.nl)
-
-        for i, row in enumerate(fmted_rows):
-            if separator and i == separator:
-                writesep('=')
-            else:
-                writesep('-')
-            writerow(row)
-        writesep('-')
+        self.add_text(str(self.table))
         self.table = None
         self.end_state(wrap=False)
 
@@ -474,13 +507,18 @@ class RstTranslator(nodes.NodeVisitor):
     def visit_image(self, node):
         self.new_state(0)
         if 'uri' in node:
-            self.add_text(_('.. image:: %s') % escape_uri(node['uri']))
+            self.add_text(_('.. image:: /%s') % escape_uri(node['uri']))
         elif 'target' in node.attributes:
-            self.add_text(_('.. image: %s') % node['target'])
+            self.add_text(_('.. image: /%s') % node['target'])
         elif 'alt' in node.attributes:
             self.add_text(_('[image: %s]') % node['alt'])
         else:
             self.add_text(_('[image]'))
+        indent = self.indent * ' '
+        if 'align' in node.attributes:
+            self.add_text(_(self.nl + indent + ((':align: %s') % node['align'])))
+        if 'width' in node.attributes:
+            self.add_text(_(self.nl + indent + ((':width: %s') % node['width'])))
         self.end_state(wrap=False)
         raise nodes.SkipNode
 
@@ -493,7 +531,7 @@ class RstTranslator(nodes.NodeVisitor):
 
     def visit_bullet_list(self, node):
         def bullet_list_format(counter):
-            return '*'
+            return '-'
         self.list_counter.append(-1)  # TODO: just 0 is fine.
         self.list_formatter.append(bullet_list_format)
     def depart_bullet_list(self, node):
@@ -593,36 +631,51 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_hlistcol(self, node):
         pass
 
-    def visit_admonition(self, node):
-        self.new_state(0)
-    def depart_admonition(self, node):
-        self.end_state()
-
     def _visit_admonition(self, node):
+        self.new_state(0)
+        if (node.tagname in self._base_admonitions):
+            self.add_text('.. ' + node.tagname + ':: ')
+        elif (node.tagname == 'admonition'):
+            if node['classes'][0] in self._base_admonitions:
+                self.add_text('.. ' + node['classes'][0] + ':: ')
+            elif 'admonition' in node['classes'][0]:
+                self.add_text('.. ' + 'admonition' + ':: ')
+            else:
+                self.log_warning("(%s) malformed admonition" % (node))
+        else:
+            self.log_warning("(%s) malformed admonition" % (node))
+        if isinstance(node.children[0], nodes.title):
+            for child in node.children[0]:
+                child.walkabout(self)
+                node.children.pop(0)
+        self.end_state(wrap=False)
         self.new_state(self.indent)
-    def _make_depart_admonition(name):
+        
+    def _depart_admonition():
         def depart_admonition(self, node):
-            self.end_state(first=admonitionlabels[name] + ': ')
+            self.end_state()
         return depart_admonition
 
+    visit_admonition = _visit_admonition
+    depart_admonition = _depart_admonition()
     visit_attention = _visit_admonition
-    depart_attention = _make_depart_admonition('attention')
+    depart_attention = _depart_admonition()
     visit_caution = _visit_admonition
-    depart_caution = _make_depart_admonition('caution')
+    depart_caution = _depart_admonition()
     visit_danger = _visit_admonition
-    depart_danger = _make_depart_admonition('danger')
+    depart_danger = _depart_admonition()
     visit_error = _visit_admonition
-    depart_error = _make_depart_admonition('error')
+    depart_error = _depart_admonition()
     visit_hint = _visit_admonition
-    depart_hint = _make_depart_admonition('hint')
+    depart_hint = _depart_admonition()
     visit_important = _visit_admonition
-    depart_important = _make_depart_admonition('important')
+    depart_important = _depart_admonition()
     visit_note = _visit_admonition
-    depart_note = _make_depart_admonition('note')
+    depart_note = _depart_admonition()
     visit_tip = _visit_admonition
-    depart_tip = _make_depart_admonition('tip')
+    depart_tip = _depart_admonition()
     visit_warning = _visit_admonition
-    depart_warning = _make_depart_admonition('warning')
+    depart_warning = _depart_admonition()
 
     def visit_versionmodified(self, node):
         self.new_state(0)
@@ -683,6 +736,20 @@ class RstTranslator(nodes.NodeVisitor):
     def depart_compact_paragraph(self, node):
         self.depart_paragraph(node)
 
+    def visit_container(self, node):
+        self.new_state(0)
+        if ('design_component' in node.attributes):
+            self.add_text('.. ' + node.get('design_component') + ':: ')
+            if isinstance(node.children[0], nodes.rubric):
+                for child in node.children[0]:
+                    child.walkabout(self)
+            node.children.pop(0)
+            self.end_state(wrap=False)
+            self.new_state(self.indent)
+        
+    def depart_container(self, node):
+        self.end_state(wrap=False)
+        
     def visit_paragraph(self, node):
         if not isinstance(node.parent, nodes.Admonition) or \
                isinstance(node.parent, addnodes.seealso):
@@ -715,6 +782,11 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_substitution_definition(self, node):
+        # try:
+        #     next(node.findall(nodes.section, descend = False, ascend = True))
+        # except StopIteration:
+        #     self.add_text('|{}|'.format(node.get('names')[0]))
+        #     return
         raise nodes.SkipNode
 
     def visit_pending_xref(self, node):
@@ -727,32 +799,48 @@ class RstTranslator(nodes.NodeVisitor):
         refbody = node.astext()
         refuri = node.get('refuri')
         refid = node.get('refid')
-        if node.get('anonymous'):
-            underscore = '__'
-        else:
-            underscore = '_'
         if not refname:
             refname = refbody
-
-        if refid:
-            if refid == self.document.nameids.get(fully_normalize_name(refname)):
-                self.add_text('`%s`%s' % (refname, underscore))
+        if node.get('internal'):
+            if 'refuri' in node: # internal
+                if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'doc' in node.children[0]['classes']):
+                    for child in node.children:
+                        child.walkabout(self)
+                        self.add_text(' </{}>`'.format(refuri))
+                elif (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'std-ref' in node.children[0]['classes']):
+                    path = refuri.split('#')[0] # take only path
+                    self.add_text(':ref:`{}:{}`'.format(path, refname))
+                else:
+                    refuri_split = refuri.split('#')
+                    if len(refuri_split) == 1:
+                         self.add_text(':doc:`{} </{}>`'.format(refname, refuri))
+                    else:
+                        self.add_text(':ref:`{}:{}`'.format(refuri_split[0], refname))
             else:
-                self.add_text('`%s <%s_>`%s' % (refname, refid, underscore))
+                assert 'refid' in node, \
+                   'References must have "refuri" or "refid" attribute.'
+                self.add_text(':ref:`{}`'.format(refid))
             raise nodes.SkipNode
-        elif refuri:
-            if refuri == refname:
-                self.add_text(escape_uri(refuri))
-            else:
-                self.add_text('`%s <%s>`%s' % (refname, escape_uri(refuri), underscore))
-            raise nodes.SkipNode
+        else:
+            if refuri .startswith('mailto:'):
+                return refbody
+            return refuri
 
     def depart_reference(self, node):
         pass
 
     def visit_download_reference(self, node):
-        self.log_unknown("download_reference", node)
-        pass
+        if 'refuri' in node and 'reftype' in node and node['reftype'] == 'download':
+            self.add_text(':download:`{}`'.format(node['refuri']))
+        elif 'filename' in node:
+            if (isinstance(node.children[0], nodes.Inline) and node.children[0]['classes'] and 'download' in node.children[0]['classes']):
+                self.add_text(':download:`')
+                for child in node.children:
+                    child.walkabout(self)
+                    self.add_text(' <{}>`'.format(node['reftarget']))
+                raise nodes.SkipNode
+        else:
+            self.log_unknown("download_reference", node)
     def depart_download_reference(self, node):
         pass
 
@@ -784,9 +872,15 @@ class RstTranslator(nodes.NodeVisitor):
         self.add_text('*')
 
     def visit_literal(self, node):
-        self.add_text('``')
+        if (node.parent.tagname == 'download_reference'):
+            pass
+        else:
+            self.add_text('``')
     def depart_literal(self, node):
-        self.add_text('``')
+        if (node.parent.tagname == 'download_reference'):
+            pass
+        else:
+            self.add_text('``')
 
     def visit_subscript(self, node):
         self.add_text(':sub:`')
@@ -808,6 +902,12 @@ class RstTranslator(nodes.NodeVisitor):
         self.add_text('[%s]' % node.astext())
         raise nodes.SkipNode
 
+    def visit_math(self, node):
+        self.add_text(":math:`")
+        
+    def depart_math(self, node):
+        self.add_text("`")
+        
     def visit_math_block(self, node):
         self.add_text(".. math::")
         self.new_state(self.indent)
@@ -827,7 +927,15 @@ class RstTranslator(nodes.NodeVisitor):
         pass
 
     def visit_inline(self, node):
-        pass
+        if (node.parent.tagname in ('reference,')):
+            if node['classes'] and 'doc' in node['classes']:    # Check if :doc: must be written
+                if (node.children[0]):                          # Check if link title
+                    text = node.astext()                        # Get the title
+                    node.clear()                                # Clear node body
+                    node.append(nodes.Text(re.sub(r'[\*]', '', text)))  # replace by a Text node with cleaned-up content
+                self.add_text(':%s:`' % node['classes'][0])
+            else:
+                self.log_warning('visit_inline - classes problem in %s' % node)
     def depart_inline(self, node):
         pass
 
@@ -850,12 +958,50 @@ class RstTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_raw(self, node):
+        self.new_state(0)
         if 'text' in node.get('format', '').split():
-            self.body.append(node.astext())
+            self.add_text(node.astext())
+        if 'latex' in node.get('format', '').split():
+            self.add_text('.. raw:: ' + "%s" % node['format'] + self.nl)
+            self.new_state(self.indent)
+            self.add_text(node.children[0])
+            self.end_state(wrap=False)
+        self.end_state()
         raise nodes.SkipNode
 
     def visit_docinfo(self, node):
         raise nodes.SkipNode
+
+    def visit_fontawesome(self, node):
+        if node.hasattr('classes') and node.hasattr('icon'):
+            self.add_text(':' + node.get('classes')[0] + ':`' + node.get('icon') + '`')
+
+    def depart_fontawesome(self, node):
+        pass
+
+    def visit_tabular_col_spec(self, node):
+        if (node['spec']):
+            self.add_text('.. tabularcolumns:: ' + "%s" % node['spec'])
+    def depart_tabular_col_spec(self, node):
+        pass
+
+    def visit_ifconfig(self, node):
+        self.new_state(0)
+        self.add_text('.. ' + 'ifconfig' + ':: ' + node['expr'])
+        self.end_state(wrap=False)
+        self.new_state(self.indent)
+    def depart_ifconfig(self, node):
+        self.end_state()
+
+    def visit_include(self, node):
+        self.new_state(0)
+        if 'text' in node.get('format', '').split():
+            self.add_text(node.astext())
+        self.end_state(wrap=False)
+        raise nodes.SkipNode
+
+    def depart_include(self, node):
+        pass
 
     def unknown_visit(self, node):
         self.log_unknown(node.__class__.__name__, node)
